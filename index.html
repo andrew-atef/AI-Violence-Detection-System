@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Violence Detection Webcam</title>
+    <style>
+        video {
+            width: 640px;
+            height: 480px;
+            border: 1px solid #ccc;
+        }
+        #status {
+            margin-top: 10px;
+            font-family: Arial, sans-serif;
+        }
+        #prediction {
+            margin-top: 10px;
+            font-family: Arial, sans-serif;
+            font-size: 18px;
+        }
+        #confidence {
+            margin-top: 5px;
+            font-family: Arial, sans-serif;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <h2>Webcam Violence Detection</h2>
+    <video id="webcam" autoplay playsinline></video>
+    <div id="status">Initializing...</div>
+    <div id="prediction"></div>
+    <div id="confidence"></div>
+
+    <script>
+        const video = document.getElementById('webcam');
+        const status = document.getElementById('status');
+        const predictionDiv = document.getElementById('prediction');
+        const confidenceDiv = document.getElementById('confidence');
+        const ENDPOINT_URL = 'https://0a3a-34-19-58-239.ngrok-free.app/predict';
+        let mediaRecorder;
+        let recordedChunks = [];
+
+        // Request webcam access
+        async function setupWebcam() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: true,
+                    audio: false 
+                });
+                video.srcObject = stream;
+                setupRecorder(stream);
+                status.textContent = 'Webcam active - analyzing every 5 seconds';
+            } catch (err) {
+                status.textContent = 'Error accessing webcam: ' + err.message;
+                console.error(err);
+            }
+        }
+
+        // Setup MediaRecorder
+        function setupRecorder(stream) {
+            mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+            
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    recordedChunks.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = sendVideoToEndpoint;
+
+            // Start recording cycle
+            startRecordingCycle();
+        }
+
+        // Recording cycle - 5 seconds on, then stop and send
+        function startRecordingCycle() {
+            recordedChunks = [];
+            mediaRecorder.start();
+            
+            setTimeout(() => {
+                mediaRecorder.stop();
+                setTimeout(startRecordingCycle, 1000); // Wait 1 second before next cycle
+            }, 5000); // Record for 5 seconds
+        }
+
+        // Send video to endpoint
+        async function sendVideoToEndpoint() {
+            const blob = new Blob(recordedChunks, { type: 'video/webm' });
+            const formData = new FormData();
+            formData.append('video', blob, 'webcam-video.mp4');
+
+            try {
+                status.textContent = 'Sending video for analysis...';
+                const response = await fetch(ENDPOINT_URL, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+                console.log('Prediction result:', result);
+                
+                // Display prediction and confidence
+                if (result.prediction) {
+                    predictionDiv.textContent = `Prediction: ${result.prediction}`;
+                    predictionDiv.style.color = result.prediction === 'Violence' ? 'red' : 'green';
+                }
+                if (result.confidence) {
+                    const confidencePercent = (result.confidence * 100).toFixed(2);
+                    confidenceDiv.textContent = `Confidence: ${confidencePercent}%`;
+                }
+                
+                status.textContent = 'Analysis complete';
+            } catch (err) {
+                console.error('Error sending video:', err);
+                status.textContent = 'Error: ' + err.message;
+                predictionDiv.textContent = '';
+                confidenceDiv.textContent = '';
+            }
+        }
+
+        // Initialize everything
+        setupWebcam();
+    </script>
+</body>
+</html>
