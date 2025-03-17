@@ -16,13 +16,18 @@ use App\Http\Controllers\AuthController;
 */
 
 Route::post('/login', [AuthController::class, 'login']);
+Route::get('/gest', function (Request $request) {
+    return response()->json(['message' => 'unauthorized to access']);
+})->name('gest');
 
 Route::middleware('auth:api')->group(function () {
-    Route::get('/dashboard', function (Request $request) {
+    Route::get('/dashboard', function  (Request $request) {
         return response()->json(['message' => 'Welcome to the dashboard']);
     })->middleware('role:user');
 
     Route::get('/admin', function (Request $request) {
-        return response()->json(['message' => 'Admin access only']);
-    })->middleware('role:admin');
+        return response()->json(['message' => 'you are admin']);
+    })->middleware(['role:admin']);
+
+
 });
