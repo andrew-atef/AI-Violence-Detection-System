@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\FlaskSettingController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
@@ -28,6 +29,8 @@ Route::middleware('auth:api')->group(function () {
     Route::get('/admin', function (Request $request) {
         return response()->json(['message' => 'you are admin']);
     })->middleware(['role:admin']);
-
-
 });
+
+
+Route::get('/flask-url', [FlaskSettingController::class, 'getFlaskUrl']);
+Route::post('/send-video', [FlaskSettingController::class, 'sendVideoToFlask']);
