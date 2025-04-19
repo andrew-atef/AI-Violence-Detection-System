@@ -53,7 +53,7 @@ Route::middleware('auth:api')->group(function () {
     Route::middleware('role:user|admin')->group(function () {
         // Flask integration
         Route::post('/send-video', [FlaskSettingController::class, 'sendVideoToFlask']);
-        Route::post('/analyze-video-gemini', [FlaskSettingController::class, 'analyzeVideoWithGemini']);
+        // Route::post('/analyze-video-gemini', [FlaskSettingController::class, 'analyzeVideoWithGemini']);
 
         // Violence notifications
         Route::prefix('violence-notifications')->group(function () {

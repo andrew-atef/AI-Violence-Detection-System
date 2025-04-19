@@ -136,8 +136,8 @@ class FlaskSettingController extends Controller
 
             return response()->json([
                 'message' => 'Video processed.',
-                'flask_prediction' => $flaskPrediction,
-                'flask_confidence' => $flaskConfidence,
+                'prediction' => $flaskPrediction,
+                'confidence' => $flaskConfidence,
                 'notification_id' => $notification->id,
                 'video_path' => Storage::url($videoPath)
             ]);
