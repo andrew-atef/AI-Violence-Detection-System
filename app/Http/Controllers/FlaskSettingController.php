@@ -84,25 +84,27 @@ class FlaskSettingController extends Controller
 
         $flaskUrl = FlaskSetting::find(1)?->public_url;
         $videoPath = null;
+        $tempPath = null;
 
         try {
-            // Save video
-            $videoPath = $video->store('videos', 'public');
-            if (!$videoPath) {
-                throw new Exception("Failed to store video.");
+            // Store video in temporary location for Flask processing
+            $tempPath = $video->store('temp', 'public');
+            if (!$tempPath) {
+                throw new Exception("Failed to store temporary video.");
             }
-            Log::info("Video stored at: {$videoPath}");
+            Log::info("Temporary video stored at: {$tempPath}");
 
             // Send to Flask
             $flaskPrediction = 'Unknown';
             $flaskConfidence = 0;
+            $notification = null;
 
             if ($flaskUrl) {
                 Log::info("Sending video to Flask: {$flaskUrl}/predict");
                 $response = Http::timeout(120)->attach(
                     'video',
-                    Storage::disk('public')->get($videoPath),
-                    basename($videoPath)
+                    Storage::disk('public')->get($tempPath),
+                    basename($tempPath)
                 )->post("{$flaskUrl}/predict");
 
                 if ($response->successful()) {
@@ -119,27 +121,41 @@ class FlaskSettingController extends Controller
                 $flaskPrediction = 'Flask Not Configured';
             }
 
-            // Create Notification
-            $notification = ViolenceNotifications::create([
-                'note' => null,
-                'camera_num' => $request->input('camera_num', 1),
-                'video_path' => $videoPath,
-                'prediction' => $flaskPrediction,
-                'confidence' => $flaskConfidence,
-                'user_id' => Auth::id() ?? null,
-            ]);
-            Log::info("Notification created: ID {$notification->id}");
+            // Only save video permanently and create notification if violence is detected
+            if ($flaskPrediction === 'Violence') {
+                // Move from temp to permanent storage
+                $videoPath = 'videos/' . basename($tempPath);
+                Storage::disk('public')->move($tempPath, $videoPath);
+                Log::info("Violence detected - Video moved to permanent storage: {$videoPath}");
 
-            // Dispatch Gemini Analysis Job
-            AnalyzeVideoWithGeminiJob::dispatch($notification->id);
-            Log::info("Dispatched Gemini job for Notification ID: {$notification->id}");
+                // Create Notification
+                $notification = ViolenceNotifications::create([
+                    'note' => null,
+                    'camera_num' => $request->input('camera_num', 1),
+                    'video_path' => $videoPath,
+                    'prediction' => $flaskPrediction,
+                    'confidence' => $flaskConfidence,
+                    'user_id' => Auth::id() ?? null,
+                ]);
+                Log::info("Notification created: ID {$notification->id}");
+
+                // Dispatch Gemini Analysis Job
+                AnalyzeVideoWithGeminiJob::dispatch($notification->id);
+                Log::info("Dispatched Gemini job for Notification ID: {$notification->id}");
+            } else {
+                // Delete temporary video if no violence detected
+                if ($tempPath && Storage::disk('public')->exists($tempPath)) {
+                    Storage::disk('public')->delete($tempPath);
+                    Log::info("No violence detected - Temporary video deleted: {$tempPath}");
+                }
+            }
 
             return response()->json([
                 'message' => 'Video processed.',
                 'prediction' => $flaskPrediction,
                 'confidence' => $flaskConfidence,
-                'notification_id' => $notification->id,
-                'video_path' => Storage::url($videoPath)
+                'notification_id' => $notification?->id,
+                'video_path' => $videoPath ? Storage::url($videoPath) : null
             ]);
 
         } catch (Exception $e) {
@@ -148,8 +164,10 @@ class FlaskSettingController extends Controller
                 'file' => $e->getFile(),
                 'line' => $e->getLine()
             ]);
-            if ($videoPath && Storage::disk('public')->exists($videoPath)) {
-                Log::info("Keeping video for debugging: {$videoPath}");
+            // Clean up temporary file
+            if ($tempPath && Storage::disk('public')->exists($tempPath)) {
+                Storage::disk('public')->delete($tempPath);
+                Log::info("Deleted temporary video after error: {$tempPath}");
             }
             return response()->json(['error' => 'Error processing video: ' . $e->getMessage()], 500);
         }
