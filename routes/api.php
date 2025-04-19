@@ -2,9 +2,9 @@
 
 use App\Http\Controllers\FlaskSettingController;
 use App\Http\Controllers\ViolenceNotificationController;
+use App\Http\Controllers\AuthController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\AuthController;
 
 /*
 |--------------------------------------------------------------------------
@@ -17,29 +17,51 @@ use App\Http\Controllers\AuthController;
 |
 */
 
-Route::post('/login', [AuthController::class, 'login']);
-Route::get('/gest', function (Request $request) {
-    return response()->json(['message' => 'unauthorized to access']);
-})->name('gest');
-
-Route::middleware('auth:api')->group(function () {
-    Route::get('/dashboard', function (Request $request) {
-        return response()->json(['message' => 'Welcome to the dashboard']);
-    })->middleware('role:user');
-
-    Route::get('/admin', function (Request $request) {
-        return response()->json(['message' => 'you are admin']);
-    })->middleware(['role:admin']);
+// Public authentication routes
+Route::prefix('auth')->group(function () {
+    Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/register', [AuthController::class, 'register']);
 });
 
+// Guest route
+Route::get('/guest', function (Request $request) {
+    return response()->json(['message' => 'unauthorized to access']);
+})->name('guest');
 
+// Protected routes
+Route::middleware('auth:api')->group(function () {
+    // User profile routes
+    Route::prefix('auth')->group(function () {
+        Route::post('/logout', [AuthController::class, 'logout']);
+        Route::get('/user', [AuthController::class, 'getUser']);
+    });
+
+    // Role-based routes
+    Route::middleware('role:user')->group(function () {
+        Route::get('/dashboard', function (Request $request) {
+            return response()->json(['message' => 'Welcome to the dashboard']);
+        });
+    });
+
+    Route::middleware('role:admin')->group(function () {
+        Route::get('/admin', function (Request $request) {
+            return response()->json(['message' => 'you are admin']);
+        });
+    });
+
+    // Violence detection routes
+    Route::middleware('role:user|admin')->group(function () {
+        // Flask integration
+        Route::post('/send-video', [FlaskSettingController::class, 'sendVideoToFlask']);
+        Route::post('/analyze-video-gemini', [FlaskSettingController::class, 'analyzeVideoWithGemini']);
+
+        // Violence notifications
+        Route::prefix('violence-notifications')->group(function () {
+            Route::get('/', [ViolenceNotificationController::class, 'index']);
+            Route::get('/{id}', [ViolenceNotificationController::class, 'show']);
+        });
+    });
+});
+
+// Public Flask URL route
 Route::get('/flask-url', [FlaskSettingController::class, 'getFlaskUrl']);
-
-Route::post('/send-video', [FlaskSettingController::class, 'sendVideoToFlask'])
-    ->middleware(['auth:api', 'role:user|admin']);
-
-Route::post('/analyzeVideoWithGemini', [FlaskSettingController::class, 'analyzeVideoWithGemini'])
-    ->middleware(['auth:api', 'role:user|admin']);
-
-Route::get('/violence-notifications', [ViolenceNotificationController::class, 'index'])
-    ->middleware(['auth:api', 'role:user|admin']);
