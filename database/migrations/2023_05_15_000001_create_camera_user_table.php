@@ -13,10 +13,10 @@ return new class extends Migration
     {
         Schema::create('camera_user', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('camera_id')->constrained()->onDelete('cascade');
+            $table->foreignId('camera_id')->constrained('cameras')->onDelete('cascade');
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->timestamps();
-            
+
             // Prevent duplicate assignments
             $table->unique(['camera_id', 'user_id']);
         });
