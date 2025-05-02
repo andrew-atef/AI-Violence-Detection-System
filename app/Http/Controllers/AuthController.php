@@ -9,6 +9,7 @@ use Tymon\JWTAuth\Exceptions\JWTException;
 use App\Models\User;
 use Illuminate\Support\Facades\Validator;
 use Spatie\Permission\Models\Role;
+use Illuminate\Support\Facades\Storage;
 
 class AuthController extends Controller
 {
@@ -19,10 +20,18 @@ class AuthController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8|confirmed',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'title' => 'nullable|string|max:255',
         ]);
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        // Handle image upload if provided
+        $imagePath = null;
+        if ($request->hasFile('image')) {
+            $imagePath = $request->file('image')->store('users', 'public');
         }
 
         // Create user
@@ -30,6 +39,8 @@ class AuthController extends Controller
             'name' => $request->name,
             'email' => $request->email,
             'password' => bcrypt($request->password),
+            'image' => $imagePath,
+            'title' => $request->title,
         ]);
 
         // Assign default role
@@ -48,6 +59,8 @@ class AuthController extends Controller
                 'name' => $user->name,
                 'email' => $user->email,
                 'roles' => $user->getRoleNames(),
+                'image' => $imagePath ? url(Storage::url($imagePath)) : null,
+                'title' => $user->title,
             ],
         ], 201);
     }
@@ -73,7 +86,7 @@ class AuthController extends Controller
         } catch (JWTException $e) {
             return response()->json(['error' => 'Could not create token'], 500);
         }
-        
+
         $user = auth()->user();
         $roles = $user->getRoleNames();
 
@@ -83,6 +96,8 @@ class AuthController extends Controller
                 'name' => $user->name,
                 'email' => $user->email,
                 'roles' => $roles,
+                'image' => $user->image ? url(Storage::url($user->image)) : null,
+                'title' => $user->title,
             ],
         ]);
     }
@@ -101,11 +116,68 @@ class AuthController extends Controller
     {
         try {
             $user = JWTAuth::parseToken()->authenticate();
+            $user->load('cameras'); // Eager load cameras
+
             return response()->json([
                 'user' => [
                     'name' => $user->name,
                     'email' => $user->email,
                     'roles' => $user->getRoleNames(),
+                    'cameras' => $user->cameras,
+                    'image' => $user->image ? url(Storage::url($user->image)) : null,
+                    'title' => $user->title,
+                ]
+            ]);
+        } catch (JWTException $e) {
+            return response()->json(['error' => 'User not found'], 404);
+        }
+    }
+
+    public function updateProfile(Request $request)
+    {
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+
+            $validator = Validator::make($request->all(), [
+                'name' => 'nullable|string|max:255',
+                'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+                'title' => 'nullable|string|max:255',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json(['errors' => $validator->errors()], 422);
+            }
+
+            // Update user fields if provided
+            if ($request->has('name')) {
+                $user->name = $request->name;
+            }
+
+            if ($request->has('title')) {
+                $user->title = $request->title;
+            }
+
+            // Handle image upload if provided
+            if ($request->hasFile('image')) {
+                // Delete old image if exists
+                if ($user->image) {
+                    Storage::disk('public')->delete($user->image);
+                }
+
+                $imagePath = $request->file('image')->store('users', 'public');
+                $user->image = $imagePath;
+            }
+
+            $user->save();
+
+            return response()->json([
+                'message' => 'Profile updated successfully',
+                'user' => [
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'roles' => $user->getRoleNames(),
+                    'image' => $user->image ? url(Storage::url($user->image)) : null,
+                    'title' => $user->title,
                 ]
             ]);
         } catch (JWTException $e) {

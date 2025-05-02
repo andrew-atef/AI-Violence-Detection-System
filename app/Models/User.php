@@ -14,7 +14,7 @@ class User extends Authenticatable implements JWTSubject
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable, HasRoles;
 
-    protected $fillable = ['name', 'email', 'password'];
+    protected $fillable = ['name', 'email', 'password', 'image', 'title'];
     protected $guard_name = 'api';
     public function getJWTIdentifier()
     {
@@ -46,5 +46,13 @@ class User extends Authenticatable implements JWTSubject
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * Get the cameras for the user.
+     */
+    public function cameras()
+    {
+        return $this->hasMany(Camera::class);
     }
 }

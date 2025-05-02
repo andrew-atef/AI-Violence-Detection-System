@@ -3,6 +3,7 @@
 use App\Http\Controllers\FlaskSettingController;
 use App\Http\Controllers\ViolenceNotificationController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\CameraController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -46,6 +47,16 @@ Route::middleware('auth:api')->group(function () {
     Route::middleware('role:admin')->group(function () {
         Route::get('/admin', function (Request $request) {
             return response()->json(['message' => 'you are admin']);
+        });
+
+        // Camera management routes for admin
+        Route::prefix('cameras')->group(function () {
+            Route::get('/', [CameraController::class, 'index']);
+            Route::post('/', [CameraController::class, 'store']);
+            Route::get('/{id}', [CameraController::class, 'show']);
+            Route::put('/{id}', [CameraController::class, 'update']);
+            Route::delete('/{id}', [CameraController::class, 'destroy']);
+            Route::post('/{id}/assign', [CameraController::class, 'assignToUser']);
         });
     });
 
