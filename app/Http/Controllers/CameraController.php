@@ -12,7 +12,7 @@ class CameraController extends Controller
 
     public function index()
     {
-        $cameras = Camera::with('user')->get();
+        $cameras = Camera::with('users')->get();
         return response()->json(['cameras' => $cameras]);
     }
 
@@ -35,7 +35,7 @@ class CameraController extends Controller
 
     public function show($id)
     {
-        $camera = Camera::with('user')->find($id);
+        $camera = Camera::with('users')->find($id);
 
         if (!$camera) {
             return response()->json(['error' => 'Camera not found'], 404);
