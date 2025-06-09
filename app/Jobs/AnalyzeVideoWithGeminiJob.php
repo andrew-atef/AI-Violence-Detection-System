@@ -17,6 +17,8 @@ class AnalyzeVideoWithGeminiJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     protected $notificationId;
+    protected $maxRetries = 3;
+    protected $retryDelay = 5; // seconds
 
     /**
      * Create a new job instance.
@@ -61,7 +63,8 @@ class AnalyzeVideoWithGeminiJob implements ShouldQueue
 
         $apiKey = env('GEMINI_API_KEY');
         if (!$apiKey) {
-            Log::error("GEMINI_API_KEY not set: ID {$this->notificationId}");
+            // Log::error("GEMINI_API_KEY not set: ID {$this->notificationId}");
+            Log::error("GEMINI_API_KEYyyyyyy {$apiKey}");
             $notification->note = "Gemini Analysis Failed: API key not configured";
             $notification->save();
             return;
@@ -80,7 +83,7 @@ class AnalyzeVideoWithGeminiJob implements ShouldQueue
             Log::info("Preparing Gemini request: ID {$this->notificationId}, Video: {$videoPath}, MIME: {$mimeTypeString}");
 
             // Gemini Request
-            $modelId = 'gemini-1.5-flash-latest';
+            $modelId = 'gemini-2.5-flash-preview-04-17';
             $url = "https://generativelanguage.googleapis.com/v1beta/models/{$modelId}:generateContent?key={$apiKey}";
 
             $requestBody = [
@@ -103,8 +106,7 @@ class AnalyzeVideoWithGeminiJob implements ShouldQueue
                 'systemInstruction' => [
                     'parts' => [
                         [
-                            'text' => "You are a security analysis AI. Analyze the provided video footage captured by a security system. " .
-                                      "Describe the events clearly for a security officer. "
+                            'text' => "You are a security analysis AI. Analyze the provided video footage captured by a security system. Describe the events clearly for a security officer."
                         ],
                     ],
                 ],
@@ -115,28 +117,52 @@ class AnalyzeVideoWithGeminiJob implements ShouldQueue
                 ],
             ];
 
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, $url);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($requestBody));
+            $attempts = 0;
+            $success = false;
+            $lastError = null;
 
-            $response = curl_exec($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
+            while ($attempts < $this->maxRetries && !$success) {
+                $attempts++;
+                
+                if ($attempts > 1) {
+                    Log::info("Retrying Gemini request (Attempt {$attempts} of {$this->maxRetries})");
+                    sleep($this->retryDelay);
+                }
 
-            if ($httpCode < 200 || $httpCode >= 300) {
-                throw new Exception("Gemini failed: HTTP $httpCode - $response");
+                $ch = curl_init();
+                curl_setopt($ch, CURLOPT_URL, $url);
+                curl_setopt($ch, CURLOPT_POST, true);
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($requestBody));
+
+                $response = curl_exec($ch);
+                $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                curl_close($ch);
+
+                if ($httpCode === 503) {
+                    $lastError = "Gemini failed: HTTP $httpCode - $response";
+                    Log::warning("Gemini service unavailable, attempt {$attempts} of {$this->maxRetries}");
+                    continue;
+                }
+
+                if ($httpCode < 200 || $httpCode >= 300) {
+                    throw new Exception("Gemini failed: HTTP $httpCode - $response");
+                }
+
+                $responseData = json_decode($response, true);
+                $description = $responseData['candidates'][0]['content']['parts'][0]['text'] ?? 'No description';
+                Log::info("Gemini response for ID: {$this->notificationId}", ['description_length' => strlen($description)]);
+
+                // Update Notification
+                $notification->note = $description;
+                $notification->save();
+                $success = true;
             }
 
-            $responseData = json_decode($response, true);
-            $description = $responseData['candidates'][0]['content']['parts'][0]['text'] ?? 'No description';
-            Log::info("Gemini response for ID: {$this->notificationId}", ['description_length' => strlen($description)]);
-
-            // Update Notification
-            $notification->note = $description;
-            $notification->save();
+            if (!$success) {
+                throw new Exception($lastError ?? "Failed after {$this->maxRetries} attempts");
+            }
 
         } catch (Exception $e) {
             Log::error('Gemini analysis error', [
